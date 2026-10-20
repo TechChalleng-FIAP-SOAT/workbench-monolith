@@ -326,7 +326,7 @@
 		<repository>
 			<id>github</id>
 			<name>GitHub Packages</name>
-			<url>https://maven.pkg.github.com/REPLACE_GITHUB_ORG/workbench-monolith</url>
+			<url>https://maven.pkg.github.com/TechChalleng-FIAP-SOAT/workbench-monolith</url>
 		</repository>
 	</distributionManagement>
 </project>
