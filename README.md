@@ -1,4 +1,17 @@
-# OS Management — Sistema de Gestao de Ordens de Servico para Oficina Mecanica
+# Workbench (monólito) — base histórica (Fase 3)
+
+> **Nota (Fase 4):** este repositório é o **monólito original (Fase 3)**, mantido como
+> base histórica. Na Fase 4 a aplicação foi refatorada em **microsserviços**; o produto
+> atual vive nos repositórios `workbench-os-service`, `workbench-billing-service`,
+> `workbench-execution-service`, `workbench-customer-service`, além de
+> `workbench-messaging`, `workbench-lambda`, `workbench-gateway`, `workbench-database`
+> e `workbench-k8s-terraform`. A estratégia da Saga e a divisão dos serviços estão em
+> `docs/adr` (ADR-0003 e ADR-0005). O conteúdo abaixo descreve o monólito e permanece
+> válido como referência da Fase 3.
+
+---
+
+## OS Management — Sistema de Gestao de Ordens de Servico para Oficina Mecanica
 
 Este projeto foi desenvolvido como parte do programa de **Pos-Graduacao da FIAP** (Pos Tech).
 
