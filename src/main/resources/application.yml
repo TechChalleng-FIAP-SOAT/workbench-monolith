@@ -1,0 +1,74 @@
+spring:
+  application:
+    name: workshop
+  # A URL do banco deve ser fornecida pelo ambiente de execução.
+  # O valor padrão é usado apenas no desenvolvimento local com Docker Compose.
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:15432/workshop} # Local
+    # url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://workshop.cyv0ccwg29gy.us-east-1.rds.amazonaws.com:5432/workshop}  # aws
+    username: ${SPRING_DATASOURCE_USERNAME:dbadmin}
+    password: ${SPRING_DATASOURCE_PASSWORD:senha-super-segura}
+    hikari:
+      max-lifetime: 1740000
+      keepalive-time: 300000
+      validation-timeout: 5000
+
+  jpa:
+    hibernate:
+      # Auto-creates/updates tables from JPA entities. Use 'validate' or a migration tool (Flyway/Liquibase) in production.
+      ddl-auto: validate
+      #ddl-auto: validate
+    # Logs SQL queries to console — useful for development debugging.
+    show-sql: false
+    # Required because the main app class is in com.workbench.workshop but entities live in com.os.features.
+    # Spring Boot 4 removed @EntityScan, so this property tells Hibernate where to find @Entity classes.
+    packages-to-scan: com.os
+    properties:
+      hibernate:
+        format_sql: true
+        # Explicitly sets PostgreSQL dialect for correct SQL generation.
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+logging:
+  file:
+    name: /tmp/app.log
+  level:
+    root: INFO
+
+management:
+  metrics:
+    tags:
+      service: ${DD_SERVICE:${spring.application.name}}
+      env: ${DD_ENV:local}
+      version: ${DD_VERSION:local}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  datadog:
+    metrics:
+      export:
+        enabled: ${DD_METRICS_ENABLED:false}
+        api-key: ${DD_API_KEY:}
+        uri: ${DD_METRICS_URI:https://api.datadoghq.com}
+        step: 1m
+
+server:
+  port: 8080
+
+jwt:
+  secret: ${JWT_SECRET:akmsdkmasfnjsgknakmsdkmasdkmsadfkmdsakmdkmsadsa}
+  expiration: ${JWT_EXPIRATION:86400000}
+
+springdoc:
+  enable-data-rest: false
+
+aws:
+  sns:
+    region: ${AWS_REGION:us-east-1}
+    topic-arn: ${AWS_SNS_TOPIC_ARN:arn:aws:sns:us-east-1:798294347765:workbench-monolith-fiap:cb7009aa-c1dd-44cf-abdb-af9c1f1686ff}

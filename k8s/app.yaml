@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workbench-monolith
+  namespace: workbench-monolith
+  labels:
+    app: workbench-monolith
+spec:
+  replicas: 1
+  # Nodes fit ~1 app pod each (2x t3.small). maxSurge:0 replaces in place so a
+  # rollout never needs a 3rd slot; maxUnavailable:1 keeps it progressing.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: workbench-monolith
+  template:
+    metadata:
+      labels:
+        app: workbench-monolith
+        tags.datadoghq.com/service: workbench-monolith
+        tags.datadoghq.com/version: "1.0.0"
+      annotations:
+        # Datadog Cluster Agent admission controller injects the Java tracer
+        # (dd-java-agent), its volume mount and JVM options — no initContainer or
+        # image change needed. Requires the Cluster Agent admission controller.
+        admission.datadoghq.com/java-lib.version: "latest"
+        # Collect this container's JSON stdout logs without turning on collection
+        # for every workload in the cluster.
+        ad.datadoghq.com/workbench-monolith.logs: '[{"source":"java","service":"workbench-monolith"}]'
+        # Agent HTTP check → emits http.can_connect for the uptime monitor.
+        ad.datadoghq.com/workbench-monolith.checks: '{"http_check":{"init_config":{},"instances":[{"name":"workbench-monolith-health","url":"http://%%host%%:8080/actuator/health","timeout":5}]}}'
+    spec:
+      containers:
+        - name: workbench-monolith
+          image: REPLACE_DOCKER_USERNAME/workbench-monolith:v1.0.0
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: workbench-config
+            - secretRef:
+                name: workbench-secret
+          env:
+            # Agent endpoint for agentless-free metrics/traces: the DaemonSet pod
+            # on this node (hostIP). DD_ENV/DD_SERVICE/DD_VERSION come from the
+            # ConfigMap so the tracer and Micrometer share one set of tags.
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_ENTITY_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_PROFILING_ENABLED
+              value: "true"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 150
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 150
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workbench-monolith
+  namespace: workbench-monolith
+  labels:
+    app: workbench-monolith
+spec:
+  type: LoadBalancer
+  selector:
+    app: workbench-monolith
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

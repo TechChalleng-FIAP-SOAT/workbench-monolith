@@ -1,0 +1,460 @@
+name: pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+# Serialize runs per ref so overlapping merges to develop/main don't race on the
+# "Bump versão" push. Do NOT cancel in progress — let a running publish finish.
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+
+  unit-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Executar testes unitários
+        run: mvn test
+
+      - name: Gerar badge de cobertura JaCoCo
+        id: jacoco
+        uses: cicirello/jacoco-badge-generator@v2.0.1
+
+      - name: Exibir percentual de cobertura
+        run: |
+          echo "cobertura = ${{ steps.jacoco.outputs.coverage }}"
+          echo "cobertura de branches = ${{ steps.jacoco.outputs.branches }}"
+
+      - name: Fazer upload do relatório JaCoCo
+        uses: actions/upload-artifact@v4.4.0
+        continue-on-error: true
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+          retention-days: 7
+          overwrite: true
+
+  code-analysis:
+    runs-on: ubuntu-latest
+    needs: unit-test
+
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Gerar relatório JaCoCo
+        run: mvn verify -DskipTests
+
+  build:
+    runs-on: ubuntu-latest
+    needs: code-analysis
+
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Empacotar aplicação
+        run: mvn package -DskipTests
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+    # Publica no GitHub Packages apenas em develop/main — evita acumular
+    # versoes a cada push de feature branch (estoura a cota de storage).
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    outputs:
+      publish_version: ${{ steps.publish-version.outputs.publish_version }}
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Incrementar versão no pom.xml
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          mvn build-helper:parse-version versions:set -DnewVersion=\${parsedVersion.majorVersion}.\${parsedVersion.minorVersion}.\${parsedVersion.nextIncrementalVersion} -DgenerateBackupPoms=false
+
+      - name: Preparar versao unica para publicacao
+        id: publish-version
+        run: |
+          RELEASE_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          PUBLISH_VERSION="${RELEASE_VERSION}-build.${{ github.run_id }}.${{ github.run_attempt }}"
+          mvn versions:set -DnewVersion="$PUBLISH_VERSION" -DgenerateBackupPoms=false
+          echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "publish_version=$PUBLISH_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar pacote
+        run: mvn --batch-mode deploy -DskipTests --settings settings.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restaurar versao limpa no pom.xml
+        run: |
+          mvn versions:set -DnewVersion="${{ steps.publish-version.outputs.release_version }}" -DgenerateBackupPoms=false
+
+      - name: Fazer commit e enviar atualização de versão
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add pom.xml
+          git commit -m "Bump versão para próximo build [skip ci]"
+          # Rebase onto the latest tip and retry: avoids non-fast-forward when
+          # another run pushed to the same branch between checkout and push.
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin "${{ github.ref_name }}" \
+              && git push origin HEAD:"${{ github.ref_name }}" && break
+            echo "push attempt ${attempt} failed; retrying in 5s..."
+            sleep 5
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build-push:
+    runs-on: ubuntu-latest
+    needs: publish
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      publish_version: ${{ needs.publish.outputs.publish_version }}
+
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Extrair hash do commit
+        id: hash
+        run: |
+          HASH=$(git rev-parse --short HEAD)
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Fazer login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Construir e enviar imagem Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/workbench-monolith:latest
+            ${{ secrets.DOCKER_USERNAME }}/workbench-monolith:v${{ needs.publish.outputs.publish_version }}
+            ${{ secrets.DOCKER_USERNAME }}/workbench-monolith:v${{ needs.publish.outputs.publish_version }}-${{ steps.hash.outputs.hash }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/workbench-monolith:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/workbench-monolith:buildcache,mode=max
+
+  # ---------------------------------------------------------------------------
+  # Deploy LOCAL — cluster Kind efêmero, aplicado via kubectl + kustomize.
+  # Sem Terraform: a app não é mais dona de nenhuma infraestrutura.
+  # Roda quando USE_AWS != 'true' na branch 'develop'. Usa o Postgres in-cluster
+  # (k8s/kustomization.yaml) — não depende de RDS.
+  # ---------------------------------------------------------------------------
+  deploy-local:
+    runs-on: ubuntu-latest
+    needs: docker-build-push
+    if: vars.USE_AWS != 'true' && github.ref == 'refs/heads/develop'
+
+    env:
+      IMAGE: ${{ secrets.DOCKER_USERNAME }}/workbench-monolith:v${{ needs.docker-build-push.outputs.publish_version }}
+      # Optional: when unset, the Datadog Agent install is skipped (app still deploys).
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+
+      - name: Criar cluster Kind
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: workbench-monolith
+
+      - name: Instalar ingress-nginx no Kind
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+          kubectl wait --namespace ingress-nginx \
+            --for=condition=ready pod \
+            --selector=app.kubernetes.io/component=controller \
+            --timeout=90s
+
+      # Instala o Datadog Agent (DaemonSet) + Cluster Agent ANTES da app, para
+      # que o admission controller injete o dd-java-agent no rollout. Sem
+      # DD_API_KEY, o passo é ignorado e a app sobe sem observabilidade.
+      - name: Configurar Helm
+        if: ${{ env.DD_API_KEY != '' }}
+        uses: azure/setup-helm@v4
+
+      - name: Instalar Datadog Agent (Helm)
+        if: ${{ env.DD_API_KEY != '' }}
+        # Best-effort: observability must not gate the app rollout. No --wait, so
+        # a slow/capacity-starved Agent rollout doesn't block; continue-on-error
+        # so any Helm hiccup is logged but non-fatal.
+        continue-on-error: true
+        run: |
+          kubectl create namespace datadog --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic datadog-secret \
+            --namespace datadog \
+            --from-literal api-key="${DD_API_KEY}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          helm repo add datadog https://helm.datadoghq.com
+          helm repo update
+          helm upgrade --install datadog datadog/datadog \
+            --namespace datadog \
+            -f k8s/datadog/values.yaml
+
+      - name: Aplicar manifests (kubectl + kustomize)
+        run: |
+          kubectl apply -k k8s/
+
+      - name: Atualizar imagem do Deployment
+        run: |
+          kubectl set image deployment/workbench-monolith workbench-monolith="$IMAGE" -n workbench-monolith
+          kubectl rollout status deployment/workbench-monolith -n workbench-monolith --timeout=180s
+
+  # ---------------------------------------------------------------------------
+  # Deploy AWS — anexa ao cluster EKS gerenciado pelo repositório
+  # workbench-k8s-terraform (cluster: workbench-monolith-<branch>) e aplica os
+  # manifests via kubectl. A app NÃO cria VPC/EKS/RDS.
+  #
+  # Roda quando USE_AWS == 'true' nas branches develop e main. O nome do ambiente
+  # é a branch (develop/main); credenciais AWS por conta usam os sufixos _DEVELOP/_MAIN.
+  # O banco é o RDS do repositório workbench-database, cujo endpoint chega
+  # via secret de repositório DB_URL_<ENV> (DB_URL_DEVELOP/DB_URL_MAIN), escolhido
+  # por branch e sincronizado a partir do output aurora_jdbc_url.
+  # ---------------------------------------------------------------------------
+  deploy-aws:
+    runs-on: ubuntu-latest
+    needs: docker-build-push
+    if: vars.USE_AWS == 'true' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+    environment: ${{ github.ref_name }}
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      # Cluster criado pelo workbench-k8s-terraform: workbench-monolith-<branch>.
+      CLUSTER_NAME: workbench-monolith-${{ github.ref_name }}
+      # RDS do workbench-database (output aurora_jdbc_url).
+      # Secret de repositório, sufixado por branch (main -> _MAIN, develop -> _DEVELOP).
+      DB_URL: ${{ github.ref_name == 'main' && secrets.DB_URL_MAIN || secrets.DB_URL_DEVELOP }}
+      # Segredos por ambiente (GitHub Environments develop/main).
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      # Optional: when unset, the Datadog Agent install is skipped and the app
+      # deploys without in-cluster observability.
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      IMAGE: ${{ secrets.DOCKER_USERNAME }}/workbench-monolith:v${{ needs.docker-build-push.outputs.publish_version }}
+
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+
+      - name: Validar entradas de infraestrutura
+        run: |
+          test -n "${DB_URL}"      || { echo "::error::Segredo DB_URL_${{ github.ref_name == 'main' && 'MAIN' || 'DEVELOP' }} ausente."; exit 1; }
+          test -n "${DB_USER}"     || { echo "::error::Segredo DB_USER ausente."; exit 1; }
+          test -n "${DB_PASSWORD}" || { echo "::error::Segredo DB_PASSWORD ausente."; exit 1; }
+          test -n "${JWT_SECRET}"  || { echo "::error::Segredo JWT_SECRET ausente."; exit 1; }
+          test "${#JWT_SECRET}" -ge 32 || { echo "::error::JWT_SECRET deve ter >=32 bytes (256 bits) para HS256; atual: ${#JWT_SECRET}."; exit 1; }
+
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ github.ref_name == 'main' && secrets.AWS_ACCESS_KEY_ID_MAIN || secrets.AWS_ACCESS_KEY_ID_DEVELOP }}
+          aws-secret-access-key: ${{ github.ref_name == 'main' && secrets.AWS_SECRET_ACCESS_KEY_MAIN || secrets.AWS_SECRET_ACCESS_KEY_DEVELOP }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configurar kubectl para o cluster EKS
+        run: |
+          aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}"
+          kubectl config current-context
+
+      # Datadog Agent (DaemonSet) + Cluster Agent no EKS, antes da app, para que
+      # o admission controller injete o dd-java-agent. Ignorado sem DD_API_KEY.
+      - name: Configurar Helm
+        if: ${{ env.DD_API_KEY != '' }}
+        uses: azure/setup-helm@v4
+
+      - name: Instalar Datadog Agent (Helm)
+        if: ${{ env.DD_API_KEY != '' }}
+        # Best-effort: observability must not gate the app rollout. No --wait, so
+        # a slow/capacity-starved Agent rollout doesn't block; continue-on-error
+        # so any Helm hiccup is logged but non-fatal.
+        continue-on-error: true
+        run: |
+          kubectl create namespace datadog --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic datadog-secret \
+            --namespace datadog \
+            --from-literal api-key="${DD_API_KEY}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          helm repo add datadog https://helm.datadoghq.com
+          helm repo update
+          helm upgrade --install datadog datadog/datadog \
+            --namespace datadog \
+            -f k8s/datadog/values.yaml \
+            --set datadog.clusterName="${CLUSTER_NAME}"
+
+      - name: Aplicar manifests Kubernetes (RDS externo — sem Postgres in-cluster)
+        run: |
+          # Metrics Server: provisionado pelo stack de infra (workbench-k8s-terraform,
+          # helm_release.metrics_server em kube-system). Não instalar aqui — o chart do Helm
+          # e o components.yaml upstream usam spec.selector diferentes e selector é imutável,
+          # o que quebra o `kubectl apply`.
+
+          # Namespace
+          kubectl apply -f k8s/namespace.yaml
+
+          # ConfigMap da app — SPRING_DATASOURCE_URL aponta para o RDS externo.
+          # DD_ENV precisa casar com os valores de env do dashboard e monitores
+          # (developer/homolog/production). Passar a branch crua (develop/main)
+          # gera env:develop/env:main, que não casa com env:$env (default
+          # production) nem com os monitores (env:production) — dados chegam mas
+          # não aparecem. main->production alinha dashboard + monitores.
+          case "${{ github.ref_name }}" in
+            main)    DD_ENV_TAG="production" ;;
+            develop) DD_ENV_TAG="homolog" ;;
+            *)       DD_ENV_TAG="developer" ;;
+          esac
+          sed -e "s|\${datasource_url}|${DB_URL}|g" \
+              -e "s|\${datadog_env}|${DD_ENV_TAG}|g" \
+              k8s/app-configmap.yaml.tpl | kubectl apply -f -
+
+          # Secret da app (credenciais nunca hardcoded)
+          sed -e "s|\${db_user}|${DB_USER}|g" \
+              -e "s|\${db_password}|${DB_PASSWORD}|g" \
+              -e "s|\${jwt_secret}|${JWT_SECRET}|g" \
+              -e "s|\${external_token}|change-me|g" \
+              -e "s|\${dd_api_key}|${DD_API_KEY}|g" \
+              k8s/app-secret.yaml.tpl | kubectl apply -f -
+
+          # App Deployment + Service, HPA e Ingress
+          kubectl apply -f k8s/app.yaml
+          kubectl apply -f k8s/hpa.yaml
+          kubectl apply -f k8s/ingress.yaml
+
+
+          # As métricas kubernetes.* vêm do node Agent, que deriva a tag env da
+          # label tags.datadoghq.com/env do pod (não do DD_ENV do container). Sem
+          # ela o widget de CPU/memória (env:$env) fica vazio. Injeta a mesma env
+          # mapeada aqui para não precisar templatar o app.yaml (usado no kustomize local).
+          kubectl patch deployment workbench-monolith -n workbench-monolith --type merge \
+            -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"tags.datadoghq.com/env\":\"${DD_ENV_TAG}\"}}}}}"
+      - name: Atualizar imagem do Deployment
+        run: |
+          kubectl set image deployment/workbench-monolith workbench-monolith="${IMAGE}" -n workbench-monolith
+          kubectl rollout status deployment/workbench-monolith -n workbench-monolith --timeout=300s || {
+            echo "===== ROLLOUT FALHOU — DIAGNOSTICO ====="
+            kubectl get pods -n workbench-monolith -o wide
+            echo "----- describe (pod da app) -----"
+            kubectl describe pod -n workbench-monolith -l app=workbench-monolith
+            echo "----- logs (app, todos os containers) -----"
+            kubectl logs -n workbench-monolith -l app=workbench-monolith --tail=120 --all-containers=true || true
+            echo "----- eventos do namespace -----"
+            kubectl get events -n workbench-monolith --sort-by=.lastTimestamp | tail -40
+            exit 1
+          }
+
+      - name: Exibir acesso a aplicacao
+        run: |
+          echo "========================================"
+          echo "EKS Cluster: ${CLUSTER_NAME}"
+          echo "Namespace: workbench-monolith"
+          echo "========================================"
+          echo "Para acessar localmente:"
+          echo "  aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}"
+          echo "  kubectl port-forward svc/workbench-monolith 8080:8080 -n workbench-monolith"
+          echo "  http://localhost:8080/swagger-ui/index.html"
+          echo "========================================"
+          echo ""
+          echo "LoadBalancer:"
+          kubectl get svc workbench-monolith -n workbench-monolith -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "(ainda provisionando...)"
+          echo ""
+
+  # ---------------------------------------------------------------------------
+  # Datadog config — cria/atualiza o dashboard e os monitores versionados em
+  # datadog/ via API (idempotente por título/nome). Independe do cluster: aplica
+  # objetos no Datadog SaaS. Roda em develop/main; ignorado sem DD_API_KEY/DD_APP_KEY.
+  # ---------------------------------------------------------------------------
+  datadog-config:
+    runs-on: ubuntu-latest
+    needs: unit-test
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+
+    env:
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+      DD_SITE: ${{ vars.DD_SITE || 'datadoghq.com' }}
+
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+
+      - name: Verificar credenciais Datadog
+        id: guard
+        run: |
+          if [ -z "${DD_API_KEY}" ] || [ -z "${DD_APP_KEY}" ]; then
+            echo "::warning::DD_API_KEY/DD_APP_KEY ausentes — pulando aplicação de dashboards/monitores."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Aplicar dashboard e monitores (upsert)
+        if: steps.guard.outputs.skip != 'true'
+        run: bash .github/scripts/apply-datadog.sh
