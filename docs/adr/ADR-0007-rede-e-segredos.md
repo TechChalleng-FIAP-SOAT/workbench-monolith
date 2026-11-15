@@ -37,6 +37,9 @@ configuração que não apareciam nos testes:
   (`customer_service_url_internal = true`).
 - Uma `NetworkPolicy` por serviço deixa entrar só a porta 8080 (vale quando o VPC CNI tem
   NetworkPolicy ligada).
+- A mensageria é cifrada em repouso: tópicos SNS com chave KMS própria (a gerenciada
+  `aws/sns` não aceita alarmes do CloudWatch) e filas com a criptografia do SQS. As
+  mensagens levam documento e e-mail do cliente.
 
 ### 2. Segredos sem valor padrão (falha fechada)
 

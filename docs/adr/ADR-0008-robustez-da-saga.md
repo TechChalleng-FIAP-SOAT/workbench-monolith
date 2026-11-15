@@ -25,7 +25,11 @@ ao Mercado Pago (ver [ADR-0007](./ADR-0007-rede-e-segredos.md)).
 1. **Uma rodada por diagnóstico.** Cada início da Saga, ou novo diagnóstico depois de uma
    falha, gera um `sagaId` novo, gravado no `saga_state` e enviado em todos os comandos. O
    orquestrador descarta resposta com `sagaId` de outra rodada. Linhas antigas recebem o id
-   da OS (o valor usado antes), para não perder respostas em trânsito.
+   da OS (o valor usado antes), para não perder respostas em trânsito. Todo participante
+   devolve o `sagaId` que recebeu. O resultado do pagamento não responde a um comando (sai
+   do job de consulta ou do webhook simulado), então o billing **grava o `sagaId` do
+   `ComandoCobrarPagamento` na cobrança** (`payments.saga_id`, migration V9) e publica
+   `PagamentoConfirmado`/`PagamentoFalhou` com ele.
 2. **Trava otimista no estado da Saga** (`@Version` em `saga_state`). Duas transações que
    leram o mesmo estado não gravam as duas; a segunda recebe **409**, e como os comandos só
    saem depois do commit, nada é enviado por ela.
