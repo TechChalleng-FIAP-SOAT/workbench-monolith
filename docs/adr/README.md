@@ -15,6 +15,8 @@ alternativas que levou a uma decisão técnica pontual, ver os [RFCs](../rfc/REA
 | [ADR-0004](ADR-0004-arquitetura-hexagonal.md) | Arquitetura Hexagonal (Ports & Adapters) no domínio | Aceito |
 | [ADR-0005](ADR-0005-fluxo-os-estoque-pagamento.md) | Fluxo da OS, estoque (reserva/baixa/retorno) e pagamento | Aceito |
 | [ADR-0006](ADR-0006-arquitetura-microsservicos-fase4.md) | Arquitetura de microsserviços e Saga orquestrada (Fase 4) | Aceito |
+| [ADR-0007](ADR-0007-rede-e-segredos.md) | Rede e segredos: serviços fora da internet e falha fechada | Aceito |
+| [ADR-0008](ADR-0008-robustez-da-saga.md) | Robustez da Saga: rodadas, concorrência e confirmação do pagamento | Aceito |
 
 ## Convenção
 
