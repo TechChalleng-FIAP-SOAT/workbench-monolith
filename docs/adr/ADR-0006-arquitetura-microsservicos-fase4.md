@@ -1,7 +1,8 @@
-# ADR-0003: Arquitetura de Microsserviços e Saga (Fase 4)
+# ADR-0006: Arquitetura de Microsserviços e Saga (Fase 4)
 
 - **Status:** Aceito
 - **Data:** 2026-10-02
+- **Numeração:** antes publicada como ADR-0003 (colidia com a ADR de split de repositórios da Fase 3); renumerada para ADR-0006 sem mudança de conteúdo.
 - **Supersede parcialmente:** [ADR-0001](./ADR-0001-padrao-comunicacao.md) (comunicação entre domínios passa a usar broker externo)
 
 ## Contexto

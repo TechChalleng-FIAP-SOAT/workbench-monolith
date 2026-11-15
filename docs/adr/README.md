@@ -13,6 +13,8 @@ alternativas que levou a uma decisão técnica pontual, ver os [RFCs](../rfc/REA
 | [ADR-0002](ADR-0002-uso-hpa.md) | Uso de HPA para escalabilidade horizontal | Aceito |
 | [ADR-0003](ADR-0003-split-multiplos-repositorios.md) | Split em múltiplos repositórios com CI/CD independente | Aceito |
 | [ADR-0004](ADR-0004-arquitetura-hexagonal.md) | Arquitetura Hexagonal (Ports & Adapters) no domínio | Aceito |
+| [ADR-0005](ADR-0005-fluxo-os-estoque-pagamento.md) | Fluxo da OS, estoque (reserva/baixa/retorno) e pagamento | Aceito |
+| [ADR-0006](ADR-0006-arquitetura-microsservicos-fase4.md) | Arquitetura de microsserviços e Saga orquestrada (Fase 4) | Aceito |
 
 ## Convenção
 

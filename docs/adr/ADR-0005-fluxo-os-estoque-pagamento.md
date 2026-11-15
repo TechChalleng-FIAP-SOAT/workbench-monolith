@@ -2,7 +2,7 @@
 
 - **Status:** Aceito
 - **Data:** 2026-10-15
-- **Relaciona-se com:** [ADR-0003](./ADR-0003-arquitetura-microsservicos-fase4.md) (microsserviços + Saga)
+- **Relaciona-se com:** [ADR-0006](./ADR-0006-arquitetura-microsservicos-fase4.md) (microsserviços + Saga)
 
 ## Contexto
 
