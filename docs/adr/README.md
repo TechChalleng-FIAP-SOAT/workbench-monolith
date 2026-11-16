@@ -17,6 +17,7 @@ alternativas que levou a uma decisão técnica pontual, ver os [RFCs](../rfc/REA
 | [ADR-0006](ADR-0006-arquitetura-microsservicos-fase4.md) | Arquitetura de microsserviços e Saga orquestrada (Fase 4) | Aceito |
 | [ADR-0007](ADR-0007-rede-e-segredos.md) | Rede e segredos: serviços fora da internet e falha fechada | Aceito |
 | [ADR-0008](ADR-0008-robustez-da-saga.md) | Robustez da Saga: rodadas, concorrência e confirmação do pagamento | Aceito |
+| [ADR-0009](ADR-0009-jwt-rs256.md) | JWT assinado com chave assimétrica (RS256) | Aceito |
 
 ## Convenção
 

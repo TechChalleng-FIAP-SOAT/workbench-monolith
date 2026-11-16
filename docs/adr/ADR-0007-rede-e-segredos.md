@@ -43,7 +43,7 @@ configuração que não apareciam nos testes:
 
 ### 2. Segredos sem valor padrão (falha fechada)
 
-- `JWT_SECRET`, `SPRING_DATASOURCE_PASSWORD` e `PAYMENT_PROVIDER` não têm padrão no
+- As chaves do JWT (hoje `JWT_PUBLIC_KEY` e afins — ver ADR-0009; na época, `JWT_SECRET`), `SPRING_DATASOURCE_PASSWORD` e `PAYMENT_PROVIDER` não têm padrão no
   `application.yml`: sem eles o serviço **não sobe**.
 - Os valores de desenvolvimento ficam no perfil **`local`** (`application-local.yml`), que
   o compose do `workbench-messaging` ativa. Os testes têm o seu `application.properties`.
