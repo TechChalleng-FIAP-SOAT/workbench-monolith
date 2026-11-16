@@ -6,7 +6,7 @@
 > `workbench-execution-service`, `workbench-customer-service`, além de
 > `workbench-messaging`, `workbench-lambda`, `workbench-gateway`, `workbench-database`
 > e `workbench-k8s-terraform`. A estratégia da Saga e a divisão dos serviços estão em
-> `docs/adr` (ADR-0003 e ADR-0005). O conteúdo abaixo descreve o monólito e permanece
+> `docs/adr` (ADR-0006 e ADR-0005). O conteúdo abaixo descreve o monólito e permanece
 > válido como referência da Fase 3.
 
 ---

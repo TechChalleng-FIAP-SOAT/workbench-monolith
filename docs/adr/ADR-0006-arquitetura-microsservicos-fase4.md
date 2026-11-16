@@ -1,7 +1,8 @@
-# ADR-0003: Arquitetura de Microsserviços e Saga (Fase 4)
+# ADR-0006: Arquitetura de Microsserviços e Saga (Fase 4)
 
 - **Status:** Aceito
 - **Data:** 2026-10-02
+- **Numeração:** antes publicada como ADR-0003 (colidia com a ADR de split de repositórios da Fase 3); renumerada para ADR-0006 sem mudança de conteúdo.
 - **Supersede parcialmente:** [ADR-0001](./ADR-0001-padrao-comunicacao.md) (comunicação entre domínios passa a usar broker externo)
 
 ## Contexto
@@ -62,8 +63,10 @@ Fluxo transacional (happy path):
 1. OS Service abre a OS (`RECEBIDA`) e comanda a reserva de estoque.
 2. Execution Service reserva e responde `ReservaConfirmada`.
 3. OS Service comanda o Billing a gerar o orçamento.
-4. Cliente aprova → Billing cria o pagamento no Mercado Pago e aguarda o webhook.
-5. Pagamento confirmado → Billing responde → OS avança para `EM_EXECUCAO`.
+4. Cliente aprova → a reserva de estoque vira baixa definitiva e a OS vai a `APROVADO`.
+5. A equipe executa os serviços → `FINALIZADA` → `PAGAMENTO_PENDENTE`: só então o Billing cria a
+   cobrança no Mercado Pago (ADR-0005: o pagamento é no fim) e **consulta** o pagamento a cada 30 s
+   (ADR-0008). Pago → OS `PAGO` → `ENTREGUE`.
 
 Compensações (rollback distribuído):
 
