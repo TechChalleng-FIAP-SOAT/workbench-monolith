@@ -63,8 +63,10 @@ Fluxo transacional (happy path):
 1. OS Service abre a OS (`RECEBIDA`) e comanda a reserva de estoque.
 2. Execution Service reserva e responde `ReservaConfirmada`.
 3. OS Service comanda o Billing a gerar o orçamento.
-4. Cliente aprova → Billing cria o pagamento no Mercado Pago e aguarda o webhook.
-5. Pagamento confirmado → Billing responde → OS avança para `EM_EXECUCAO`.
+4. Cliente aprova → a reserva de estoque vira baixa definitiva e a OS vai a `APROVADO`.
+5. A equipe executa os serviços → `FINALIZADA` → `PAGAMENTO_PENDENTE`: só então o Billing cria a
+   cobrança no Mercado Pago (ADR-0005: o pagamento é no fim) e **consulta** o pagamento a cada 30 s
+   (ADR-0008). Pago → OS `PAGO` → `ENTREGUE`.
 
 Compensações (rollback distribuído):
 
