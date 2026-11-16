@@ -25,7 +25,8 @@ segredo para chamar o customer-service.
    tem a pública correspondente. O token de serviço não vale no billing, no execution nem no
    gateway.
 4. **Chaves na configuração** como Base64 do DER numa linha; sem valor padrão (ADR-0007). O par
-   de desenvolvimento fica no perfil `local` e em `workbench-messaging/dev-keys/`.
+   de desenvolvimento é gerado por máquina (`workbench-messaging/scripts/dev-keys.sh`, fora do git);
+   só o par do token de serviço fica fixo no perfil `local`.
 
 ## Consequências
 
